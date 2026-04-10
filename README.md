@@ -1,6 +1,6 @@
 # 🚀 Multithreaded Task Scheduler (C++)
 
-A high-performance **multithreaded task scheduler** built in C++ that simulates real-world backend job processing systems (similar to thread pools used in production services).
+A high-performance **multithreaded task scheduler** built in C++ that simulates real-world backend job execution systems (similar to thread pools used in production services).
 
 ---
 
@@ -8,7 +8,7 @@ A high-performance **multithreaded task scheduler** built in C++ that simulates 
 
 This project implements a **thread pool–based scheduler** where multiple worker threads execute tasks concurrently from a shared **priority queue**.
 
-It demonstrates key systems concepts such as **concurrency control, scheduling policies, fairness, and observability**.
+It demonstrates core systems concepts such as **concurrency control, scheduling policies, fairness, and runtime observability**.
 
 ---
 
@@ -17,25 +17,36 @@ It demonstrates key systems concepts such as **concurrency control, scheduling p
 ### 🧵 Thread Pool Execution
 
 * Fixed-size pool of worker threads
-* Efficient task processing without thread creation overhead
+* Eliminates overhead of frequent thread creation/destruction
+* Efficient concurrent task execution
+
+---
 
 ### 📊 Priority Scheduling with Aging
 
 * Tasks are scheduled based on priority
-* Aging mechanism increases priority over time
+* Aging mechanism gradually increases priority over time
 * Prevents starvation of low-priority tasks
+
+---
 
 ### ❌ Task Cancellation
 
 * Tasks can be cancelled before execution
 * Workers safely skip cancelled tasks
+* Uses flag-based cancellation (safe and non-intrusive)
 
-### ⏱️ Timeout Handling
+---
 
-* Uses `std::future` to detect long-running tasks
-* Prevents worker threads from blocking indefinitely
+### ⏱️ Timeout Detection (Best-Effort)
 
-### 📈 Real-Time CLI Dashboard
+* Detects long-running tasks using `std::future::wait_for`
+* Logs timeout events for observability
+* ⚠️ Does not forcibly terminate tasks (C++ does not support safe thread killing)
+
+---
+
+### 📈 Real-Time CLI Monitoring
 
 Displays live system metrics:
 
@@ -43,7 +54,7 @@ Displays live system metrics:
 * Completed tasks
 * Throughput (tasks/sec)
 * Average latency
-* Active threads
+* Configured worker threads
 
 ---
 
@@ -54,18 +65,19 @@ Displays live system metrics:
         |   ThreadPool     |
         +------------------+
                  |
-        +------------------+
-        |   Task Queue     |  (Priority + Aging)
-        +------------------+
+        +--------------------------+
+        |   Task Queue (Priority)  |
+        |   + Aging Mechanism      |
+        +--------------------------+
            |          |
      +---------+  +---------+
-     | Worker  |  | Worker  |  ... (N threads)
+     | Worker  |  | Worker  |   ... (N threads)
      +---------+  +---------+
            |
      Task Execution
            |
      +------------------+
-     |   CLI Monitor    |
+     |     Monitor      |
      +------------------+
 ```
 
@@ -74,7 +86,7 @@ Displays live system metrics:
 ## 🔄 Execution Flow
 
 1. Tasks are submitted via `ThreadPool::submit()`
-2. Tasks are inserted into a thread-safe priority queue
+2. Tasks are inserted into a **thread-safe priority queue**
 3. Worker threads wait using `condition_variable`
 4. Highest-priority task is selected and executed
 5. Aging mechanism periodically updates priorities
@@ -102,14 +114,14 @@ scheduler/
 =========== TASK SCHEDULER DASHBOARD ===========
 Queue Size        : 6
 Completed Tasks   : 4
-Throughput        : 1.75 tasks/sec
-Avg Latency       : 1300 ms
-Active Threads    : 4
+Throughput        : 2.00 tasks/sec
+Avg Latency       : 1250.50 ms
+Configured Threads: 4
 ================================================
 
-[Worker] Executing Task 2 | Base: 10 | Effective: 10
-[Worker] Executing Task 7 | Base: 1  | Effective: 9
-Task 8 timed out
+[Worker-1] Executing Task 2 | Priority: 10
+[Worker-3] Executing Task 7 | Priority: 9 (aged)
+[Monitor] Task 8 exceeded timeout threshold
 ```
 
 ---
@@ -120,21 +132,51 @@ Task 8 timed out
 * Synchronization (`mutex`, `condition_variable`)
 * Producer–Consumer pattern
 * Thread pool design
-* Priority queue (heap-based scheduling)
-* Starvation and aging
+* Priority scheduling (heap-based queue)
+* Starvation prevention (aging)
 * Task lifecycle management
-* Basic observability and metrics
+* Runtime observability & metrics
+
+---
+
+## ⚡ Performance Characteristics
+
+* Task insertion: **O(log n)** (priority queue)
+* Task retrieval: **O(log n)**
+* Concurrency model: **shared queue + worker threads**
+* Potential bottleneck: centralized queue lock under high contention
 
 ---
 
 ## ⚖️ Design Decisions & Trade-offs
 
-| Component    | Decision                   | Reason                                       |
+| Component    | Decision                   | Trade-off                                    |
 | ------------ | -------------------------- | -------------------------------------------- |
-| Queue        | Centralized priority queue | Simpler design, easier to reason             |
-| Cancellation | Flag-based                 | Safe, avoids killing threads                 |
-| Timeout      | Detection-based            | Prevents blocking without unsafe termination |
-| Scheduling   | Priority + Aging           | Balances urgency and fairness                |
+| Queue        | Centralized priority queue | Simple, but can become contention bottleneck |
+| Scheduling   | Priority + Aging           | Prevents starvation, adds periodic overhead  |
+| Cancellation | Flag-based                 | Safe, but cannot stop running tasks          |
+| Timeout      | Detection-only             | Observable, not enforceable                  |
+
+---
+
+## ⚠️ Limitations
+
+* No preemptive task cancellation (C++ limitation)
+* Timeout mechanism cannot terminate running tasks
+* Centralized queue may limit scalability
+* No backpressure for overload scenarios
+* Monitoring uses console I/O (not production-grade logging)
+
+---
+
+## 🌍 Real-World Relevance
+
+This system models components commonly used in production:
+
+* Thread pools in web servers
+* Background job processors (e.g., task queues)
+* OS-level scheduling concepts (priority + fairness)
+* Backend service execution pipelines
 
 ---
 
@@ -158,26 +200,23 @@ g++ -std=c++17 -pthread main.cpp -o scheduler
 
 * Work-stealing queues (reduce contention)
 * Lock-free data structures
-* Bounded queue + backpressure
+* Bounded queue with backpressure
+* Cooperative task cancellation (cancellation tokens)
 * Persistent job storage
-* Distributed scheduling (Kafka / SQS style)
+* Distributed scheduling (Kafka / SQS style systems)
 
 ---
 
 ## 🎯 Learning Outcomes
 
-This project helped in understanding:
-
-* Real-world concurrency challenges
-* Efficient thread management
-* Scheduling strategies in backend systems
-* Designing observable systems with runtime metrics
+* Deep understanding of concurrency and synchronization
+* Designing efficient thread pools
+* Implementing scheduling policies
+* Handling real-world system trade-offs
+* Building observable systems with runtime metrics
 
 ---
 
 ## 👨‍💻 Author
-
 **Yogesh Joshi**
-C++ | Backend | Systems Programming
 
----
