@@ -1,10 +1,3 @@
-#pragma once
-#include "TaskQueue.h"
-#include "Worker.h"
-#include "Monitor.h"
-#include <vector>
-#include <atomic>
-
 class ThreadPool {
 private:
     TaskQueue queue;
@@ -12,7 +5,7 @@ private:
     std::thread aging_thread;
     std::thread monitor_thread;
 
-    bool stop_flag = false;
+    std::atomic<bool> stop_flag{false};
 
     std::atomic<int> completed{0};
     std::atomic<long long> total_latency{0};
@@ -21,10 +14,10 @@ public:
     ThreadPool(int n) {
         for (int i = 0; i < n; i++) {
             workers.emplace_back(
-                Worker(queue, stop_flag, completed, total_latency));
+                Worker(queue, std::ref(stop_flag), completed, total_latency));
         }
 
-        aging_thread = std::thread([&]() {
+        aging_thread = std::thread([this]() {
             while (!stop_flag) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 queue.apply_aging();
@@ -39,14 +32,19 @@ public:
         queue.push(task);
     }
 
-    void cancelTask(int id) {
-        queue.cancel(id);
-    }
-
     void shutdown() {
         stop_flag = true;
+        queue.notify_all();
+
         for (auto &t : workers) t.join();
         aging_thread.join();
         monitor_thread.join();
     }
+
+    ~ThreadPool() {
+        if (!stop_flag) shutdown();
+    }
+
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
 };
