@@ -1,48 +1,45 @@
-#pragma once
-#include "TaskQueue.h"
-#include <atomic>
-#include <thread>
-#include <iostream>
-#include <iomanip>
-
-#define CYAN "\033[36m"
-#define GREEN "\033[32m"
-#define YELLOW "\033[33m"
-#define RESET "\033[0m"
-
 class Monitor {
 private:
     TaskQueue &queue;
     std::atomic<int> &completed;
     std::atomic<long long> &total_latency;
-    bool &stop_flag;
+    std::atomic<bool> &stop_flag;
     int thread_count;
 
 public:
     Monitor(TaskQueue &q,
             std::atomic<int> &comp,
             std::atomic<long long> &lat,
-            bool &stop,
+            std::atomic<bool> &stop,
             int threads)
-        : queue(q), completed(comp), total_latency(lat),
-          stop_flag(stop), thread_count(threads) {}
+        : queue(q), completed(comp),
+          total_latency(lat),
+          stop_flag(stop),
+          thread_count(threads) {}
 
     void operator()() {
         using namespace std::chrono;
 
         auto start_time = steady_clock::now();
+        int last_completed = 0;
 
-        while (!stop_flag) {
+        while (!stop_flag.load()) {
             std::this_thread::sleep_for(seconds(1));
 
             auto now = steady_clock::now();
-            double elapsed = duration_cast<seconds>(now - start_time).count();
+            double elapsed =
+                duration_cast<seconds>(now - start_time).count();
 
             int comp = completed.load();
             int qsize = queue.size();
 
-            double throughput = (elapsed > 0) ? comp / elapsed : 0;
-            double avg_latency = (comp > 0) ? total_latency.load() / comp : 0;
+            int diff = comp - last_completed;
+            double throughput = diff / 1.0; // per second
+            last_completed = comp;
+
+            double avg_latency = (comp > 0)
+                ? static_cast<double>(total_latency.load()) / comp
+                : 0;
 
             std::cout << "\033[2J\033[H";
 
@@ -54,7 +51,7 @@ public:
                       << throughput << " tasks/sec\n";
             std::cout << YELLOW << "Avg Latency       : " << RESET
                       << avg_latency << " ms\n";
-            std::cout << CYAN << "Active Threads    : " << RESET << thread_count << "\n";
+            std::cout << CYAN << "Threads           : " << RESET << thread_count << "\n";
             std::cout << CYAN << "================================================\n" << RESET;
         }
     }
