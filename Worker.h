@@ -2,75 +2,78 @@
 
 #include "TaskQueue.h"
 
-#include <thread>
-#include <future>
-#include <iostream>
-#include <chrono>
 #include <atomic>
+#include <chrono>
+#include <iostream>
+#include <thread>
 
 class Worker {
 private:
     TaskQueue& queue;
-    std::atomic<bool>& stop_flag;
 
-    std::atomic<int>& completed;
-    std::atomic<long long>& total_latency;
+    std::atomic<bool>& stopFlag;
+    std::atomic<int>& completedTasks;
+    std::atomic<long long>& totalLatency;
 
 public:
     Worker(TaskQueue& q,
            std::atomic<bool>& stop,
-           std::atomic<int>& comp,
+           std::atomic<int>& completed,
            std::atomic<long long>& latency)
         : queue(q),
-          stop_flag(stop),
-          completed(comp),
-          total_latency(latency) {}
+          stopFlag(stop),
+          completedTasks(completed),
+          totalLatency(latency) {}
 
     void operator()() {
-        while (!stop_flag.load()) {
 
-            Task task(0, "", 0, [] {});
-
-            try {
-                task = queue.pop();
-            }
-            catch (const std::runtime_error&) {
-                break;          // Queue shutdown
-            }
-
-            if (task.is_cancelled.load())
-                continue;
+        while (!stopFlag.load()) {
 
             try {
-                auto future =
-                    std::async(std::launch::async, task.func);
 
-                if (future.wait_for(std::chrono::seconds(2))
-                    == std::future_status::timeout) {
+                Task task = queue.pop();
 
-                    std::cout << "Task "
-                              << task.id
-                              << " timed out\n";
+                if (task.cancelled.load()) {
+                    continue;
                 }
-                else {
-                    future.get();
+
+                auto start =
+                    std::chrono::steady_clock::now();
+
+                try {
+                    task.func();
                 }
+                catch (const std::exception& e) {
+                    std::cout
+                        << "[Worker] Task "
+                        << task.id
+                        << " failed: "
+                        << e.what()
+                        << "\n";
+                }
+                catch (...) {
+                    std::cout
+                        << "[Worker] Task "
+                        << task.id
+                        << " failed.\n";
+                }
+
+                auto finish =
+                    std::chrono::steady_clock::now();
+
+                auto latency =
+                    std::chrono::duration_cast<
+                        std::chrono::milliseconds>(
+                        finish - task.enqueue_time)
+                        .count();
+
+                completedTasks.fetch_add(1);
+                totalLatency.fetch_add(latency);
+
             }
             catch (...) {
-                std::cout << "Task "
-                          << task.id
-                          << " failed\n";
+                break;
             }
-
-            auto end = std::chrono::steady_clock::now();
-
-            auto latency =
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    end - task.enqueue_time)
-                    .count();
-
-            total_latency.fetch_add(latency);
-            completed.fetch_add(1);
         }
     }
 };
