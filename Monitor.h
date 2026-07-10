@@ -10,25 +10,35 @@
 
 class Monitor {
 private:
+
+    // Shared task queue
     TaskQueue& queue;
 
+    // Shared statistics
     std::atomic<int>& completedTasks;
     std::atomic<long long>& totalLatency;
+
+    // Global shutdown flag
     std::atomic<bool>& stopFlag;
 
+    // Total worker threads
     int workerCount;
 
 public:
-    Monitor(TaskQueue& q,
-            std::atomic<int>& completed,
-            std::atomic<long long>& latency,
-            std::atomic<bool>& stop,
-            int workers)
+
+    Monitor(
+        TaskQueue& q,
+        std::atomic<int>& completed,
+        std::atomic<long long>& latency,
+        std::atomic<bool>& stop,
+        int workers)
         : queue(q),
           completedTasks(completed),
           totalLatency(latency),
           stopFlag(stop),
           workerCount(workers) {}
+
+    //------------------------------------------------------
 
     void operator()() {
 
@@ -40,20 +50,17 @@ public:
 
         while (!stopFlag.load()) {
 
-            std::this_thread::sleep_for(seconds(1));
-
-#ifdef _WIN32
-            system("cls");
-#else
-            system("clear");
-#endif
+            // Update every 2 seconds
+            std::this_thread::sleep_for(seconds(2));
 
             auto now = steady_clock::now();
 
-            auto uptime =
-                duration_cast<seconds>(now - startTime).count();
+            long long uptime =
+                duration_cast<seconds>(
+                    now - startTime).count();
 
             int completed = completedTasks.load();
+
             int queueSize = queue.size();
 
             int throughput =
@@ -64,25 +71,52 @@ public:
             double avgLatency = 0.0;
 
             if (completed > 0) {
+
                 avgLatency =
-                    static_cast<double>(totalLatency.load()) /
-                    completed;
+                    static_cast<double>(
+                        totalLatency.load()) / completed;
             }
 
-            std::cout << "\n";
-            std::cout << "=====================================================\n";
-            std::cout << "          MULTITHREADED TASK SCHEDULER\n";
-            std::cout << "=====================================================\n\n";
+            double utilization = 0.0;
 
-            std::cout << std::left
-                      << std::setw(30)
+            if (workerCount > 0) {
+
+                utilization =
+                    std::min(
+                        100.0,
+                        (throughput * 100.0) /
+                        workerCount);
+            }
+
+            //--------------------------------------------------
+
+            std::cout << "\n\n";
+            std::cout << "=============================================================\n";
+            std::cout << "            MULTITHREADED TASK SCHEDULER MONITOR\n";
+            std::cout << "=============================================================\n";
+
+            std::cout << std::left;
+
+            std::cout << std::setw(30)
+                      << "System Uptime"
+                      << ": "
+                      << uptime
+                      << " sec\n";
+
+            std::cout << std::setw(30)
                       << "Worker Threads"
                       << ": "
                       << workerCount
                       << '\n';
 
             std::cout << std::setw(30)
-                      << "Queue Size"
+                      << "Scheduler State"
+                      << ": "
+                      << (queue.empty() ? "Idle" : "Processing")
+                      << '\n';
+
+            std::cout << std::setw(30)
+                      << "Waiting Tasks"
                       << ": "
                       << queueSize
                       << '\n';
@@ -97,7 +131,7 @@ public:
                       << "Throughput"
                       << ": "
                       << throughput
-                      << " tasks/sec\n";
+                      << " tasks / 2 sec\n";
 
             std::cout << std::setw(30)
                       << "Average Latency"
@@ -108,15 +142,18 @@ public:
                       << " ms\n";
 
             std::cout << std::setw(30)
-                      << "System Uptime"
+                      << "Worker Utilization"
                       << ": "
-                      << uptime
-                      << " sec\n";
+                      << std::fixed
+                      << std::setprecision(1)
+                      << utilization
+                      << "%\n";
 
-            std::cout << "\n";
-            std::cout << "=====================================================\n";
-
+            std::cout << "=============================================================\n";
             std::cout.flush();
         }
+
+        std::cout
+            << "\n[Monitor] Monitoring stopped.\n";
     }
 };
