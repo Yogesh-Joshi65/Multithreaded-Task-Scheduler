@@ -1,63 +1,96 @@
 #include "ThreadPool.h"
 
-#include <iostream>
-#include <thread>
 #include <chrono>
-#include <string>
+#include <iostream>
 #include <stdexcept>
+#include <thread>
 
 int main() {
+
     ThreadPool pool(4);
 
     std::cout << "Submitting tasks...\n";
 
-    // Normal tasks
-    for (int i = 0; i < 50; i++) {
-        pool.submit(
-            Task(i,
-                 "Task" + std::to_string(i),
-                 i % 5,
-                 [i]() {
-                     std::this_thread::sleep_for(
-                         std::chrono::milliseconds(200 + i * 50));
+    // Submit normal tasks
+    for (int i = 1; i <= 50; i++) {
 
-                     std::cout << "Executing Task "
-                               << i << '\n';
-                 }));
+        pool.submit(
+            Task(
+                i,
+                "Task_" + std::to_string(i),
+                i % 5,
+                [i]() {
+
+                    std::cout
+                        << "Executing Task "
+                        << i
+                        << '\n';
+
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(
+                            200 + (i % 5) * 100));
+
+                }));
     }
 
-    // High priority task
+    // High Priority Task
     pool.submit(
-        Task(100,
-             "HIGH_PRIORITY",
-             100,
-             []() {
-                 std::cout << "🔥 High priority task executed\n";
-             }));
 
-    // Exception test
+        Task(
+
+            100,
+
+            "HighPriority",
+
+            100,
+
+            []() {
+
+                std::cout
+                    << "\n***** HIGH PRIORITY TASK *****\n";
+
+            }));
+    
+
+    // Exception Task
     pool.submit(
-        Task(200,
-             "ExceptionTask",
-             2,
-             []() {
-                 throw std::runtime_error("Intentional failure");
-             }));
 
-    // Cancel one task
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+        Task(
 
-    std::cout << "Cancelling Task 5...\n";
-    pool.cancelTask(5);
+            101,
 
-    // Allow workers to execute
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+            "Exception",
 
-    std::cout << "Shutting down...\n";
+            50,
+
+            []() {
+
+                throw std::runtime_error(
+                    "Intentional Exception");
+
+            }));
+
+
+    std::this_thread::sleep_for(
+        std::chrono::seconds(1));
+
+    std::cout
+        << "\nCancelling Task 20\n";
+
+    pool.cancelTask(20);
+
+
+    std::this_thread::sleep_for(
+        std::chrono::seconds(10));
+
+
+    std::cout
+        << "\nStopping Scheduler...\n";
 
     pool.shutdown();
 
-    std::cout << "Shutdown complete.\n";
+    std::cout
+        << "Scheduler stopped successfully.\n";
 
     return 0;
 }
