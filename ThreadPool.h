@@ -1,81 +1,99 @@
 #pragma once
 
-#include <vector>
-#include <thread>
-#include <atomic>
-#include <chrono>
-#include <utility>
-
-#include "Task.h"
 #include "TaskQueue.h"
 #include "Worker.h"
 #include "Monitor.h"
+
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <vector>
 
 class ThreadPool {
 private:
     TaskQueue queue;
 
     std::vector<std::thread> workers;
-    std::thread aging_thread;
-    std::thread monitor_thread;
 
-    std::atomic<bool> stop_flag{false};
+    std::thread monitorThread;
+    std::thread agingThread;
 
-    std::atomic<int> completed{0};
-    std::atomic<long long> total_latency{0};
+    std::atomic<bool> stopFlag{false};
+
+    std::atomic<int> completedTasks{0};
+    std::atomic<long long> totalLatency{0};
 
 public:
-    explicit ThreadPool(int n) {
-        for (int i = 0; i < n; i++) {
+
+    explicit ThreadPool(int threadCount) {
+
+        // Create worker threads
+        for (int i = 0; i < threadCount; i++) {
+
             workers.emplace_back(
-                Worker(queue,
-                       stop_flag,
-                       completed,
-                       total_latency));
+                Worker(
+                    queue,
+                    stopFlag,
+                    completedTasks,
+                    totalLatency
+                )
+            );
         }
 
-        aging_thread = std::thread([this]() {
-            while (!stop_flag.load()) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                queue.apply_aging();
+        // Aging Thread
+        agingThread = std::thread([this]() {
+
+            while (!stopFlag.load()) {
+
+                std::this_thread::sleep_for(
+                    std::chrono::seconds(1));
+
+                queue.applyAging();
             }
         });
 
-        monitor_thread = std::thread(
-            Monitor(queue,
-                    completed,
-                    total_latency,
-                    stop_flag,
-                    n));
+        // Monitor Thread
+        monitorThread = std::thread(
+            Monitor(
+                queue,
+                completedTasks,
+                totalLatency,
+                stopFlag,
+                threadCount));
     }
 
     void submit(Task task) {
         queue.push(std::move(task));
     }
 
-    void cancelTask(int id) {
-        queue.cancel(id);
+    void cancelTask(int taskId) {
+        queue.cancel(taskId);
     }
 
     void shutdown() {
-        stop_flag.store(true);
+
+        bool expected = false;
+
+        if (!stopFlag.compare_exchange_strong(expected, true))
+            return;
 
         queue.shutdown();
 
-        for (auto &t : workers)
-            if (t.joinable())
-                t.join();
+        for (auto &worker : workers) {
 
-        if (aging_thread.joinable())
-            aging_thread.join();
+            if (worker.joinable())
+                worker.join();
+        }
 
-        if (monitor_thread.joinable())
-            monitor_thread.join();
+        if (agingThread.joinable())
+            agingThread.join();
+
+        if (monitorThread.joinable())
+            monitorThread.join();
     }
 
     ~ThreadPool() {
-        if (!stop_flag.load())
-            shutdown();
+        shutdown();
     }
 
     ThreadPool(const ThreadPool&) = delete;
