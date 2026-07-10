@@ -8,18 +8,11 @@
 #include <iostream>
 #include <thread>
 
-// ANSI Colors
-#define RESET  "\033[0m"
-#define GREEN  "\033[32m"
-#define YELLOW "\033[33m"
-#define CYAN   "\033[36m"
-#define RED    "\033[31m"
-
 class Monitor {
 private:
     TaskQueue& queue;
 
-    std::atomic<int>& completed;
+    std::atomic<int>& completedTasks;
     std::atomic<long long>& totalLatency;
 
     std::atomic<bool>& stopFlag;
@@ -27,13 +20,14 @@ private:
     int workerCount;
 
 public:
-    Monitor(TaskQueue& q,
-            std::atomic<int>& comp,
-            std::atomic<long long>& latency,
-            std::atomic<bool>& stop,
-            int workers)
+    Monitor(
+        TaskQueue& q,
+        std::atomic<int>& completed,
+        std::atomic<long long>& latency,
+        std::atomic<bool>& stop,
+        int workers)
         : queue(q),
-          completed(comp),
+          completedTasks(completed),
           totalLatency(latency),
           stopFlag(stop),
           workerCount(workers) {}
@@ -41,6 +35,9 @@ public:
     void operator()() {
 
         int previousCompleted = 0;
+
+        auto start =
+            std::chrono::steady_clock::now();
 
         while (!stopFlag.load()) {
 
@@ -53,65 +50,82 @@ public:
             system("clear");
 #endif
 
-            int currentCompleted = completed.load();
+            auto now =
+                std::chrono::steady_clock::now();
+
+            auto uptime =
+                std::chrono::duration_cast<
+                    std::chrono::seconds>(
+                    now - start)
+                    .count();
+
+            int completed =
+                completedTasks.load();
+
+            int queueSize =
+                queue.size();
 
             int throughput =
-                currentCompleted - previousCompleted;
+                completed - previousCompleted;
 
-            previousCompleted = currentCompleted;
+            previousCompleted = completed;
 
             double avgLatency = 0.0;
 
-            if (currentCompleted > 0) {
+            if (completed > 0) {
+
                 avgLatency =
                     static_cast<double>(
-                        totalLatency.load()) /
-                    currentCompleted;
+                        totalLatency.load())
+                    / completed;
             }
 
-            std::cout << CYAN
-                      << "=============================================\n";
-            std::cout
-                << "      MULTITHREADED TASK SCHEDULER\n";
-            std::cout
-                << "=============================================\n"
-                << RESET;
+            std::cout << "\n";
+            std::cout << "=====================================================\n";
+            std::cout << "        MULTITHREADED TASK SCHEDULER\n";
+            std::cout << "=====================================================\n\n";
 
-            std::cout << GREEN
-                      << "Worker Threads : "
-                      << RESET
+            std::cout << std::left
+                      << std::setw(25)
+                      << "Worker Threads"
+                      << ": "
                       << workerCount
-                      << "\n";
+                      << '\n';
 
-            std::cout << GREEN
-                      << "Queue Size     : "
-                      << RESET
-                      << queue.size()
-                      << "\n";
+            std::cout << std::setw(25)
+                      << "Queue Size"
+                      << ": "
+                      << queueSize
+                      << '\n';
 
-            std::cout << GREEN
-                      << "Completed      : "
-                      << RESET
-                      << currentCompleted
-                      << "\n";
+            std::cout << std::setw(25)
+                      << "Completed Tasks"
+                      << ": "
+                      << completed
+                      << '\n';
 
-            std::cout << YELLOW
-                      << "Throughput     : "
-                      << RESET
+            std::cout << std::setw(25)
+                      << "Throughput"
+                      << ": "
                       << throughput
                       << " tasks/sec\n";
 
-            std::cout << YELLOW
-                      << "Avg Latency    : "
-                      << RESET
+            std::cout << std::setw(25)
+                      << "Average Latency"
+                      << ": "
                       << std::fixed
                       << std::setprecision(2)
                       << avgLatency
                       << " ms\n";
 
-            std::cout << CYAN
-                      << "=============================================\n"
-                      << RESET;
+            std::cout << std::setw(25)
+                      << "System Uptime"
+                      << ": "
+                      << uptime
+                      << " sec\n";
+
+            std::cout << "\n";
+            std::cout << "=====================================================\n";
         }
     }
 };
