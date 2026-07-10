@@ -2,64 +2,86 @@
 
 #include <chrono>
 #include <iostream>
-#include <stdexcept>
 #include <thread>
 
 int main() {
 
     ThreadPool pool(4);
 
-    std::cout << "Submitting tasks...\n";
+    std::cout << "\n=========== Task Scheduler Demo ===========\n\n";
 
-    // Submit normal tasks
+    // Normal Tasks
     for (int i = 1; i <= 50; i++) {
 
+        int priority = (i % 5) + 1;
+
         pool.submit(
+
             Task(
+
                 i,
+
                 "Task_" + std::to_string(i),
-                i % 5,
+
+                priority,
+
                 [i]() {
 
                     std::cout
                         << "Executing Task "
                         << i
-                        << '\n';
+                        << std::endl;
 
                     std::this_thread::sleep_for(
                         std::chrono::milliseconds(
-                            200 + (i % 5) * 100));
+                            500 + (i % 5) * 200));
 
-                }));
+                }
+
+            )
+
+        );
     }
 
+    //---------------------------------------------------------
+
     // High Priority Task
+
     pool.submit(
 
         Task(
 
             100,
 
-            "HighPriority",
+            "Critical_Task",
 
             100,
 
             []() {
 
                 std::cout
-                    << "\n***** HIGH PRIORITY TASK *****\n";
+                    << "\n******** HIGH PRIORITY TASK ********\n";
 
-            }));
-    
+                std::this_thread::sleep_for(
+                    std::chrono::seconds(2));
+
+            }
+
+        )
+
+    );
+
+    //---------------------------------------------------------
 
     // Exception Task
+
     pool.submit(
 
         Task(
 
             101,
 
-            "Exception",
+            "Exception_Task",
 
             50,
 
@@ -68,29 +90,31 @@ int main() {
                 throw std::runtime_error(
                     "Intentional Exception");
 
-            }));
+            }
 
+        )
+
+    );
+
+    //---------------------------------------------------------
 
     std::this_thread::sleep_for(
-        std::chrono::seconds(1));
+        std::chrono::seconds(2));
 
     std::cout
-        << "\nCancelling Task 20\n";
+        << "\nCancelling Task 25...\n";
 
-    pool.cancelTask(20);
+    pool.cancelTask(25);
 
+    //---------------------------------------------------------
 
     std::this_thread::sleep_for(
-        std::chrono::seconds(10));
-
+        std::chrono::seconds(20));
 
     std::cout
         << "\nStopping Scheduler...\n";
 
     pool.shutdown();
-
-    std::cout
-        << "Scheduler stopped successfully.\n";
 
     return 0;
 }
