@@ -15,28 +15,34 @@ private:
 
     std::vector<std::thread> workers;
 
-    std::thread monitorThread;
     std::thread agingThread;
+    std::thread monitorThread;
 
     std::atomic<bool> stopFlag{false};
 
     std::atomic<int> completedTasks{0};
     std::atomic<long long> totalLatency{0};
 
+    int workerCount;
+
 public:
 
-    explicit ThreadPool(int threadCount) {
+    explicit ThreadPool(int threads)
+        : workerCount(threads)
+    {
 
-        // Create worker threads
-        for (int i = 0; i < threadCount; i++) {
+        // Create Worker Threads
+        for (int i = 0; i < workerCount; i++) {
 
             workers.emplace_back(
+
                 Worker(
+                    i + 1,
                     queue,
                     stopFlag,
                     completedTasks,
-                    totalLatency
-                )
+                    totalLatency)
+
             );
         }
 
@@ -52,23 +58,36 @@ public:
             }
         });
 
-        // Monitor Thread
+        // Monitoring Thread
         monitorThread = std::thread(
+
             Monitor(
                 queue,
                 completedTasks,
                 totalLatency,
                 stopFlag,
-                threadCount));
+                workerCount)
+
+        );
     }
+
+    //-------------------------------------------------
 
     void submit(Task task) {
+
         queue.push(std::move(task));
+
     }
 
+    //-------------------------------------------------
+
     void cancelTask(int taskId) {
+
         queue.cancel(taskId);
+
     }
+
+    //-------------------------------------------------
 
     void shutdown() {
 
@@ -90,10 +109,16 @@ public:
 
         if (monitorThread.joinable())
             monitorThread.join();
+
+        std::cout << "\nScheduler Shutdown Successfully.\n";
     }
 
+    //-------------------------------------------------
+
     ~ThreadPool() {
+
         shutdown();
+
     }
 
     ThreadPool(const ThreadPool&) = delete;
