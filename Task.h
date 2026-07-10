@@ -1,12 +1,13 @@
 #pragma once
 
-#include <string>
 #include <functional>
+#include <string>
 #include <chrono>
 #include <atomic>
 #include <utility>
 
-struct Task {
+class Task {
+public:
     int id;
     std::string name;
 
@@ -17,20 +18,21 @@ struct Task {
 
     std::function<void()> func;
 
-    std::atomic<bool> is_cancelled{false};
+    std::atomic<bool> cancelled;
 
-    Task(int id_,
-         std::string name_,
-         int priority_,
-         std::function<void()> f)
-        : id(id_),
-          name(std::move(name_)),
-          base_priority(priority_),
-          effective_priority(priority_),
+    Task(int id,
+         std::string name,
+         int priority,
+         std::function<void()> job)
+        : id(id),
+          name(std::move(name)),
+          base_priority(priority),
+          effective_priority(priority),
           enqueue_time(std::chrono::steady_clock::now()),
-          func(std::move(f)) {}
+          func(std::move(job)),
+          cancelled(false) {}
 
-    // Move constructor
+    // Move Constructor
     Task(Task&& other) noexcept
         : id(other.id),
           name(std::move(other.name)),
@@ -38,9 +40,9 @@ struct Task {
           effective_priority(other.effective_priority),
           enqueue_time(other.enqueue_time),
           func(std::move(other.func)),
-          is_cancelled(other.is_cancelled.load()) {}
+          cancelled(other.cancelled.load()) {}
 
-    // Move assignment
+    // Move Assignment
     Task& operator=(Task&& other) noexcept {
         if (this != &other) {
             id = other.id;
@@ -49,12 +51,11 @@ struct Task {
             effective_priority = other.effective_priority;
             enqueue_time = other.enqueue_time;
             func = std::move(other.func);
-            is_cancelled.store(other.is_cancelled.load());
+            cancelled.store(other.cancelled.load());
         }
         return *this;
     }
 
-    // Disable copying
     Task(const Task&) = delete;
     Task& operator=(const Task&) = delete;
 };
