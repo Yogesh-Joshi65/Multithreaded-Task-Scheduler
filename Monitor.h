@@ -14,18 +14,16 @@ private:
 
     std::atomic<int>& completedTasks;
     std::atomic<long long>& totalLatency;
-
     std::atomic<bool>& stopFlag;
 
     int workerCount;
 
 public:
-    Monitor(
-        TaskQueue& q,
-        std::atomic<int>& completed,
-        std::atomic<long long>& latency,
-        std::atomic<bool>& stop,
-        int workers)
+    Monitor(TaskQueue& q,
+            std::atomic<int>& completed,
+            std::atomic<long long>& latency,
+            std::atomic<bool>& stop,
+            int workers)
         : queue(q),
           completedTasks(completed),
           totalLatency(latency),
@@ -34,15 +32,15 @@ public:
 
     void operator()() {
 
-        int previousCompleted = 0;
+        using namespace std::chrono;
 
-        auto start =
-            std::chrono::steady_clock::now();
+        auto startTime = steady_clock::now();
+
+        int previousCompleted = 0;
 
         while (!stopFlag.load()) {
 
-            std::this_thread::sleep_for(
-                std::chrono::seconds(1));
+            std::this_thread::sleep_for(seconds(1));
 
 #ifdef _WIN32
             system("cls");
@@ -50,20 +48,13 @@ public:
             system("clear");
 #endif
 
-            auto now =
-                std::chrono::steady_clock::now();
+            auto now = steady_clock::now();
 
             auto uptime =
-                std::chrono::duration_cast<
-                    std::chrono::seconds>(
-                    now - start)
-                    .count();
+                duration_cast<seconds>(now - startTime).count();
 
-            int completed =
-                completedTasks.load();
-
-            int queueSize =
-                queue.size();
+            int completed = completedTasks.load();
+            int queueSize = queue.size();
 
             int throughput =
                 completed - previousCompleted;
@@ -73,44 +64,42 @@ public:
             double avgLatency = 0.0;
 
             if (completed > 0) {
-
                 avgLatency =
-                    static_cast<double>(
-                        totalLatency.load())
-                    / completed;
+                    static_cast<double>(totalLatency.load()) /
+                    completed;
             }
 
             std::cout << "\n";
             std::cout << "=====================================================\n";
-            std::cout << "        MULTITHREADED TASK SCHEDULER\n";
+            std::cout << "          MULTITHREADED TASK SCHEDULER\n";
             std::cout << "=====================================================\n\n";
 
             std::cout << std::left
-                      << std::setw(25)
+                      << std::setw(30)
                       << "Worker Threads"
                       << ": "
                       << workerCount
                       << '\n';
 
-            std::cout << std::setw(25)
+            std::cout << std::setw(30)
                       << "Queue Size"
                       << ": "
                       << queueSize
                       << '\n';
 
-            std::cout << std::setw(25)
+            std::cout << std::setw(30)
                       << "Completed Tasks"
                       << ": "
                       << completed
                       << '\n';
 
-            std::cout << std::setw(25)
+            std::cout << std::setw(30)
                       << "Throughput"
                       << ": "
                       << throughput
                       << " tasks/sec\n";
 
-            std::cout << std::setw(25)
+            std::cout << std::setw(30)
                       << "Average Latency"
                       << ": "
                       << std::fixed
@@ -118,7 +107,7 @@ public:
                       << avgLatency
                       << " ms\n";
 
-            std::cout << std::setw(25)
+            std::cout << std::setw(30)
                       << "System Uptime"
                       << ": "
                       << uptime
@@ -126,6 +115,8 @@ public:
 
             std::cout << "\n";
             std::cout << "=====================================================\n";
+
+            std::cout.flush();
         }
     }
 };
