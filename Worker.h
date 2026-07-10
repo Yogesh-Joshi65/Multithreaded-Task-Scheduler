@@ -9,16 +9,33 @@
 
 class Worker {
 private:
+
+    // ----------------------------------------------------
+    // Unique identifier for this worker thread.
+    // Useful for debugging and monitoring.
+    // ----------------------------------------------------
     int workerId;
 
+    // Shared task queue from which all workers
+    // fetch tasks.
     TaskQueue& queue;
 
+    // Global shutdown flag.
+    // When true, worker exits its execution loop.
     std::atomic<bool>& stopFlag;
 
+    // Shared statistics.
+    // Updated after successful task completion.
     std::atomic<int>& completedTasks;
     std::atomic<long long>& totalLatency;
 
 public:
+
+    // ----------------------------------------------------
+    // Constructor
+    //
+    // Initializes references to shared resources.
+    // ----------------------------------------------------
     Worker(
         int id,
         TaskQueue& q,
@@ -31,14 +48,28 @@ public:
           completedTasks(completed),
           totalLatency(latency) {}
 
+    // ----------------------------------------------------
+    // Function Call Operator
+    //
+    // This makes Worker a callable object (functor),
+    // allowing it to be passed directly to std::thread.
+    //
+    // Example:
+    // std::thread t(Worker(...));
+    // ----------------------------------------------------
     void operator()() {
 
+        // Keep processing tasks until scheduler stops.
         while (!stopFlag.load()) {
 
             try {
 
+                // Remove the highest-priority task.
+                // If queue is empty, worker sleeps until
+                // a task is available.
                 Task task = queue.pop();
 
+                // Skip execution if task was cancelled.
                 if (task.isCancelled()) {
 
                     std::cout
@@ -51,8 +82,10 @@ public:
                     continue;
                 }
 
+                // Update task state.
                 task.markRunning();
 
+                // Record execution start time.
                 auto start =
                     std::chrono::steady_clock::now();
 
@@ -67,13 +100,16 @@ public:
 
                 try {
 
+                    // Execute user-provided task.
                     task.work();
 
+                    // Mark successful completion.
                     task.markCompleted();
 
                 }
                 catch (const std::exception& e) {
 
+                    // Handle standard exceptions.
                     task.markFailed();
 
                     std::cout
@@ -89,6 +125,7 @@ public:
                 }
                 catch (...) {
 
+                    // Handle unknown exceptions.
                     task.markFailed();
 
                     std::cout
@@ -101,9 +138,19 @@ public:
                     continue;
                 }
 
+                // Record task completion time.
                 auto finish =
                     std::chrono::steady_clock::now();
 
+                // ------------------------------------------------
+                // Calculate total latency.
+                //
+                // Latency = Finish Time - Enqueue Time
+                //
+                // Includes:
+                // - Waiting time in queue
+                // - Actual execution time
+                // ------------------------------------------------
                 auto latency =
                     std::chrono::duration_cast<
                         std::chrono::milliseconds>(
@@ -111,6 +158,7 @@ public:
                         task.enqueueTime)
                         .count();
 
+                // Update shared scheduler statistics.
                 completedTasks.fetch_add(1);
 
                 totalLatency.fetch_add(latency);
@@ -127,6 +175,8 @@ public:
             }
             catch (...) {
 
+                // queue.pop() throws when scheduler
+                // is shutting down.
                 break;
             }
         }
