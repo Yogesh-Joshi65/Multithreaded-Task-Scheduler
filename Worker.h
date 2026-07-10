@@ -9,18 +9,24 @@
 
 class Worker {
 private:
+    int workerId;
+
     TaskQueue& queue;
 
     std::atomic<bool>& stopFlag;
+
     std::atomic<int>& completedTasks;
     std::atomic<long long>& totalLatency;
 
 public:
-    Worker(TaskQueue& q,
-           std::atomic<bool>& stop,
-           std::atomic<int>& completed,
-           std::atomic<long long>& latency)
-        : queue(q),
+    Worker(
+        int id,
+        TaskQueue& q,
+        std::atomic<bool>& stop,
+        std::atomic<int>& completed,
+        std::atomic<long long>& latency)
+        : workerId(id),
+          queue(q),
           stopFlag(stop),
           completedTasks(completed),
           totalLatency(latency) {}
@@ -33,29 +39,66 @@ public:
 
                 Task task = queue.pop();
 
-                if (task.cancelled.load()) {
+                if (task.isCancelled()) {
+
+                    std::cout
+                        << "[Worker "
+                        << workerId
+                        << "] Task "
+                        << task.id
+                        << " cancelled.\n";
+
                     continue;
                 }
+
+                task.markRunning();
 
                 auto start =
                     std::chrono::steady_clock::now();
 
+                std::cout
+                    << "[Worker "
+                    << workerId
+                    << "] Started Task "
+                    << task.id
+                    << " (Priority "
+                    << task.effectivePriority
+                    << ")\n";
+
                 try {
-                    task.func();
+
+                    task.work();
+
+                    task.markCompleted();
+
                 }
                 catch (const std::exception& e) {
+
+                    task.markFailed();
+
                     std::cout
-                        << "[Worker] Task "
+                        << "[Worker "
+                        << workerId
+                        << "] Task "
                         << task.id
-                        << " failed: "
+                        << " failed : "
                         << e.what()
-                        << "\n";
+                        << '\n';
+
+                    continue;
                 }
                 catch (...) {
+
+                    task.markFailed();
+
                     std::cout
-                        << "[Worker] Task "
+                        << "[Worker "
+                        << workerId
+                        << "] Task "
                         << task.id
                         << " failed.\n";
+
+                    continue;
                 }
 
                 auto finish =
@@ -64,16 +107,33 @@ public:
                 auto latency =
                     std::chrono::duration_cast<
                         std::chrono::milliseconds>(
-                        finish - task.enqueue_time)
+                        finish -
+                        task.enqueueTime)
                         .count();
 
                 completedTasks.fetch_add(1);
+
                 totalLatency.fetch_add(latency);
+
+                std::cout
+                    << "[Worker "
+                    << workerId
+                    << "] Finished Task "
+                    << task.id
+                    << " ("
+                    << latency
+                    << " ms)\n";
 
             }
             catch (...) {
+
                 break;
             }
         }
+
+        std::cout
+            << "[Worker "
+            << workerId
+            << "] Stopped.\n";
     }
 };
