@@ -8,45 +8,42 @@
 #include <chrono>
 #include <algorithm>
 #include <stdexcept>
-#include <utility>
 
 class TaskQueue {
 private:
     std::vector<Task> heap;
+
     std::mutex mtx;
     std::condition_variable cv;
-    bool stop_flag = false;
+
+    bool stopped = false;
 
     static bool compare(const Task& a, const Task& b) {
         if (a.effective_priority == b.effective_priority) {
-            if (a.base_priority == b.base_priority)
-                return a.enqueue_time > b.enqueue_time; // older first
-
-            return a.base_priority < b.base_priority;
+            return a.enqueue_time > b.enqueue_time; // older task wins
         }
-
         return a.effective_priority < b.effective_priority;
     }
 
-    void heapify_up(int i) {
-        while (i > 0) {
-            int parent = (i - 1) / 2;
+    void heapifyUp(int index) {
+        while (index > 0) {
+            int parent = (index - 1) / 2;
 
-            if (!compare(heap[parent], heap[i]))
+            if (!compare(heap[parent], heap[index]))
                 break;
 
-            std::swap(heap[parent], heap[i]);
-            i = parent;
+            std::swap(heap[parent], heap[index]);
+            index = parent;
         }
     }
 
-    void heapify_down(int i) {
+    void heapifyDown(int index) {
         int n = heap.size();
 
         while (true) {
-            int largest = i;
-            int left = 2 * i + 1;
-            int right = 2 * i + 2;
+            int largest = index;
+            int left = 2 * index + 1;
+            int right = 2 * index + 2;
 
             if (left < n && compare(heap[largest], heap[left]))
                 largest = left;
@@ -54,20 +51,23 @@ private:
             if (right < n && compare(heap[largest], heap[right]))
                 largest = right;
 
-            if (largest == i)
+            if (largest == index)
                 break;
 
-            std::swap(heap[i], heap[largest]);
-            i = largest;
+            std::swap(heap[index], heap[largest]);
+            index = largest;
         }
     }
 
 public:
-    void push(Task task) {
-        std::unique_lock<std::mutex> lock(mtx);
 
-        heap.push_back(std::move(task));
-        heapify_up(heap.size() - 1);
+    void push(Task task) {
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+
+            heap.push_back(std::move(task));
+            heapifyUp(heap.size() - 1);
+        }
 
         cv.notify_one();
     }
@@ -76,11 +76,11 @@ public:
         std::unique_lock<std::mutex> lock(mtx);
 
         cv.wait(lock, [&]() {
-            return stop_flag || !heap.empty();
+            return stopped || !heap.empty();
         });
 
-        if (stop_flag && heap.empty())
-            throw std::runtime_error("Queue shutdown");
+        if (stopped && heap.empty())
+            throw std::runtime_error("Queue stopped");
 
         Task top = std::move(heap.front());
 
@@ -92,42 +92,39 @@ public:
         heap.front() = std::move(heap.back());
         heap.pop_back();
 
-        heapify_down(0);
+        heapifyDown(0);
 
         return top;
     }
 
-    void cancel(int task_id) {
+    void cancel(int taskId) {
         std::lock_guard<std::mutex> lock(mtx);
 
         for (auto& task : heap) {
-            if (task.id == task_id) {
-                task.is_cancelled.store(true);
-                break;
+            if (task.id == taskId) {
+                task.cancelled.store(true);
+                return;
             }
         }
     }
 
-    void apply_aging() {
-        std::unique_lock<std::mutex> lock(mtx);
+    void applyAging() {
+        std::lock_guard<std::mutex> lock(mtx);
 
         auto now = std::chrono::steady_clock::now();
 
-        constexpr int MAX_PRIORITY = 100;
-
         for (auto& task : heap) {
+
             auto wait =
                 std::chrono::duration_cast<std::chrono::seconds>(
-                    now - task.enqueue_time)
-                    .count();
+                    now - task.enqueue_time).count();
 
             task.effective_priority =
-                std::min(task.base_priority + static_cast<int>(wait),
-                         MAX_PRIORITY);
+                task.base_priority + static_cast<int>(wait);
         }
 
-        for (int i = static_cast<int>(heap.size()) / 2 - 1; i >= 0; --i)
-            heapify_down(i);
+        for (int i = heap.size() / 2 - 1; i >= 0; --i)
+            heapifyDown(i);
     }
 
     int size() {
@@ -138,7 +135,7 @@ public:
     void shutdown() {
         {
             std::lock_guard<std::mutex> lock(mtx);
-            stop_flag = true;
+            stopped = true;
         }
 
         cv.notify_all();
